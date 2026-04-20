@@ -102,41 +102,115 @@
     let currentQuestionIdx = 0;
     let score = 0;
 
-    // --- CETTE LIGNE EST CRUCIALE POUR QUE LE BOUTON FONCTIONNE ---
+    // --- CONNEXION ---
     window.connexion = async function() {
         const nameInput = document.getElementById('studentName');
         const name = nameInput.value.trim();
+        if(!name) return alert("Indique ton prénom !");
         
-        if(!name) {
-            alert("N'oublie pas d'entrer ton prénom !");
-            return;
+        currentUser = name;
+        await setDoc(doc(db, "students", name.toLowerCase()), { 
+            name: name, 
+            lastSeen: new Date() 
+        }, { merge: true });
+
+        document.getElementById('display-name').innerText = name;
+        document.getElementById('auth-section').classList.add('hidden');
+        document.getElementById('hub-section').classList.remove('hidden');
+    };
+
+    // --- GESTION DU QUIZ ---
+    window.lancerQuiz = function(semaine) {
+        questions = [];
+        // On génère 5 questions pour le test
+        for(let i=0; i<5; i++) {
+            questions.push(genererQuestionSemaine1());
         }
+        currentQuestionIdx = 0;
+        score = 0;
         
-        try {
-            currentUser = name;
-            // On enregistre l'élève dans Firebase [cite: 1]
-            await setDoc(doc(db, "students", name.toLowerCase()), { 
-                name: name, 
-                lastSeen: new Date() 
+        document.getElementById('hub-section').classList.add('hidden');
+        document.getElementById('quiz-section').classList.remove('hidden');
+        afficherQuestion();
+    };
+
+    function genererQuestionSemaine1() {
+        const types = ["position", "valeur", "bonds", "total"];
+        const type = types[Math.floor(Math.random() * types.length)];
+        const nbr = Math.floor(Math.random() * 9000) + 1000; 
+
+        if(type === "position") {
+            const pos = Math.random() > 0.5 ? {idx: 1, nom: "centaines"} : {idx: 2, nom: "dizaines"};
+            return { q: `Dans le nombre **${nbr}**, quel chiffre occupe la position des **${pos.nom}** ?`, r: nbr.toString().charAt(pos.idx) };
+        } else if(type === "valeur") {
+            const digit = nbr.toString().charAt(0);
+            return { q: `Quelle est la valeur du chiffre **${digit}** dans le nombre **${nbr}** ?`, r: (parseInt(digit)*1000).toString() };
+        } else if(type === "bonds") {
+            return { q: `Complète la suite : ${nbr}, ${nbr+10}, ${nbr+20}, ...`, r: (nbr+30).toString() };
+        } else {
+            return { q: `Combien y a-t-il de dizaines **au total** dans ${nbr} ?`, r: Math.floor(nbr/10).toString() };
+        }
+    }
+
+    function afficherQuestion() {
+        const q = questions[currentQuestionIdx];
+        document.getElementById('question-count').innerText = `Question ${currentQuestionIdx + 1}/5`;
+        document.getElementById('question-text').innerHTML = q.q;
+        document.getElementById('answer-input').value = "";
+        document.getElementById('answer-input').focus();
+    }
+
+    window.verifierReponse = async function() {
+        const userAns = document.getElementById('answer-input').value.trim();
+        const correctAns = questions[currentQuestionIdx].r;
+
+        if(userAns === correctAns) {
+            score++;
+            confetti({ particleCount: 100, spread: 70, origin: { y: 0.6 } });
+        } else {
+            alert(`Dommage ! La réponse était ${correctAns}`);
+        }
+
+        currentQuestionIdx++;
+        if(currentQuestionIdx < questions.length) {
+            afficherQuestion();
+        } else {
+            const finalScore = (score / questions.length) * 100;
+            const studentRef = doc(db, "students", currentUser.toLowerCase());
+            await setDoc(studentRef, {
+                resultats: { semaine1: finalScore + "%" }
             }, { merge: true });
 
-            document.getElementById('display-name').innerText = name;
-            document.getElementById('auth-section').classList.add('hidden');
-            document.getElementById('hub-section').classList.remove('hidden');
-        } catch (error) {
-            console.error("Erreur Firebase:", error);
-            alert("Erreur de connexion. Vérifie ta console.");
+            alert(`Défi terminé ! Ton score : ${score}/5 (${finalScore}%)`);
+            location.reload();
         }
     };
 
-    // Rendons aussi les autres fonctions accessibles au HTML
-    window.lancerQuiz = (semaine) => {
-        // ... (ton code de quiz reste le même ici)
+    // --- ADMIN & NAVIGATION ---
+    window.ouvrirAdmin = async function() {
+        const pass = prompt("Mot de passe enseignant :");
+        if(pass === "Mennais401") {
+            document.getElementById('hub-section').classList.add('hidden');
+            document.getElementById('auth-section').classList.add('hidden');
+            document.getElementById('admin-section').classList.remove('hidden');
+            
+            const querySnapshot = await getDocs(collection(db, "students"));
+            const tbody = document.getElementById('admin-table-body');
+            tbody.innerHTML = "";
+            querySnapshot.forEach((doc) => {
+                const data = doc.data();
+                tbody.innerHTML += `
+                    <tr class="border-b">
+                        <td class="p-3 font-bold">${data.name}</td>
+                        <td class="p-3 text-indigo-600 font-bold">${data.resultats?.semaine1 || '---'}</td>
+                    </tr>`;
+            });
+        } else {
+            alert("Accès refusé");
+        }
     };
 
-    window.ouvrirAdmin = async () => {
-        // ... (ton code admin reste le même ici)
-    };
+    window.quitterQuiz = () => location.reload();
 </script>
 </body>
 </html>
